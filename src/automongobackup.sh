@@ -62,21 +62,7 @@ DBHOST="127.0.0.1"
 DBPORT="27017"
 
 # Backup directory location e.g /backups
-BACKUPDIR="/var/backups/mongodb"
-
-# Mail setup
-# What would you like to be mailed to you?
-# - log   : send only log file
-# - files : send log file and sql files as attachments (see docs)
-# - stdout : will simply output the log to the screen if run manually.
-# - quiet : Only send logs if an error occurs to the MAILADDR.
-MAILCONTENT="stdout"
-
-# Set the maximum allowed email size in k. (4000 = approx 5MB email [see docs])
-export MAXATTSIZE="4000"
-
-# Email Address to send mail to? (user@domain.com)
-# MAILADDR=""
+BACKUPDIR="/backup/mongodb"
 
 # ============================================================================
 # === SCHEDULING AND RETENTION OPTIONS ( Read the doc's below for details )===
@@ -116,13 +102,13 @@ LATEST="yes"
 LATESTLINK="yes"
 
 # Use oplog for point-in-time snapshotting.
-OPLOG="yes"
+OPLOG="no"
 
 # Choose other Server if is Replica-Set Master
-REPLICAONSLAVE="yes"
+REPLICAONSLAVE="no"
 
 # Allow DBUSERNAME without DBAUTHDB
-REQUIREDBAUTHDB="yes"
+REQUIREDBAUTHDB="no"
 
 # Maximum files of a single backup used by split - leave empty if no split required
 # MAXFILESIZE=""
@@ -145,17 +131,6 @@ REQUIREDBAUTHDB="yes"
 #
 # You can change the backup storage location from /backups to anything
 # you like by using the BACKUPDIR setting..
-#
-# The MAILCONTENT and MAILADDR options and pretty self explanatory, use
-# these to have the backup log mailed to you at any email address or multiple
-# email addresses in a space seperated list.
-#
-# (If you set mail content to "log" you will require access to the "mail" program
-# on your server. If you set this to "files" you will have to have mutt installed
-# on your server. If you set it to "stdout" it will log to the screen if run from
-# the console or to the cron job owner if run through cron. If you set it to "quiet"
-# logs will only be mailed if there are errors reported. )
-#
 #
 # Finally copy automongobackup.sh to anywhere on your server and make sure
 # to set executable permission. You can also copy the script to
@@ -287,24 +262,20 @@ REQUIREDBAUTHDB="yes"
 #=====================================================================
 
 shellout () {
-    if [ -n "$1" ]; then
-        echo "$1"
-        exit 1
-    fi
-    exit 0
+    [ "${1}" ] || exit 0
+    echo "${1}"
+    exit 1
 }
 
 # External config - override default values set above
 for x in default sysconfig; do
-  if [ -f "/etc/$x/automongobackup" ]; then
-      # shellcheck source=/dev/null
-      source /etc/$x/automongobackup
-  fi
+  # shellcheck source=/dev/null
+  [ -f "/etc/${x}/automongobackup" ] && source /etc/${x}/automongobackup
 done
 
 # Include extra config file if specified on commandline, e.g. for backuping several remote dbs from central server
 # shellcheck source=/dev/null
-[ ! -z "$1" ] && [ -f "$1" ] && source ${1}
+[ "${1}" ] && [ -f "${1}" ] && source ${1}
 
 #=====================================================================
 
@@ -316,132 +287,97 @@ DNOW=$(date +%u)                                  # Day number of the week 1 to 
 DOM=$(date +%d)                                   # Date of the Month e.g. 27
 M=$(date +%B)                                     # Month e.g January
 W=$(date +%V)                                     # Week Number e.g 37
-VER=0.11                                          # Version Number
-LOGFILE=$BACKUPDIR/$DBHOST-$(date +%H%M).log       # Logfile Name
-LOGERR=$BACKUPDIR/ERRORS_$DBHOST-$(date +%H%M).log # Logfile Name
 OPT=""                                            # OPT string for use with mongodump
 OPTSEC=""                                         # OPT string for use with mongodump in select_secondary_member function
 QUERY=""                                          # QUERY string for use with mongodump
 HOURLYQUERY=""                                    # HOURLYQUERY string for use with mongodump
 
 # Do we need to use a username/password?
-if [ "$DBUSERNAME" ]; then
-    OPT="$OPT --username=$DBUSERNAME --password=$DBPASSWORD"
-    if [ "$REQUIREDBAUTHDB" = "yes" ]; then
-        OPT="$OPT --authenticationDatabase=$DBAUTHDB"
+if [ "${DBUSERNAME}" ] ; then
+    OPT="${OPT} --username=${DBUSERNAME} --password=${DBPASSWORD}"
+    if [ "${REQUIREDBAUTHDB}" = "yes" ] ; then
+        OPT="${OPT} --authenticationDatabase=${DBAUTHDB}"
     fi
 fi
 
 # Do we need to use a username/password for ReplicaSet Secondary Members Selection?
-if [ "$DBUSERNAME" ]; then
-    OPTSEC="$OPTSEC --username=$DBUSERNAME --password=$DBPASSWORD"
-    if [ "$REQUIREDBAUTHDB" = "yes" ]; then
-        OPTSEC="$OPTSEC --authenticationDatabase=$DBAUTHDB"
+if [ "${DBUSERNAME}" ] ; then
+    OPTSEC="${OPTSEC} --username=${DBUSERNAME} --password=${DBPASSWORD}"
+    if [ "${REQUIREDBAUTHDB}" = "yes" ] ; then
+        OPTSEC="${OPTSEC} --authenticationDatabase=${DBAUTHDB}"
     fi
 fi
 
 # Do we use oplog for point-in-time snapshotting?
-if [ "$OPLOG" = "yes" ] && [ "$DBNAME" != "yes" ]; then
-    OPT="$OPT --oplog"
-fi
+[ "${OPLOG}" = "yes" ] && [ "${DBNAME}" != "yes" ] && OPT="${OPT} --oplog"
 
 # Do we need to backup only a specific database?
-if [ "$DBNAME" ]; then
-  OPT="$OPT -d $DBNAME"
-fi
+[ "${DBNAME}" ] && OPT="${OPT} -d ${DBNAME}"
 
 # Do we need to backup only a specific collections?
-if [ "$COLLECTIONS" ]; then
-  for x in $COLLECTIONS; do
-    OPT="$OPT --collection $x"
+if [ "${COLLECTIONS}" ] ; then
+  for x in ${COLLECTIONS}; do
+    OPT="${OPT} --collection ${x}"
   done
 fi
 
 # Do we need to exclude collections?
-if [ "$EXCLUDE_COLLECTIONS" ]; then
-  for x in $EXCLUDE_COLLECTIONS; do
-    OPT="$OPT --excludeCollection $x"
+if [ "${EXCLUDE_COLLECTIONS}" ] ; then
+  for x in ${EXCLUDE_COLLECTIONS}; do
+    OPT="${OPT} --excludeCollection ${x}"
   done
 fi
 
 # Do we use a filter for hourly point-in-time snapshotting?
-if [ "$DOHOURLY" == "yes" ]; then
+if [ "${DOHOURLY}" == "yes" ] ; then
 
   # getting PITR START timestamp
   # shellcheck disable=SC2012
-  [ "$COMP" = "gzip" ] && HOURLYQUERY=$(ls -t $BACKUPDIR/hourly | head -n 1 | cut -d '.' -f3)
+  [ "${COMP}" = "gzip" ] && HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
 
   # setting the start timestamp to NOW for the first execution
-  if [ -z "$HOURLYQUERY" ]; then
-      QUERY=""
-    else
-      # limit the documents included in the output of mongodump
-      # shellcheck disable=SC2016
-      QUERY='{ "ts" : { $gt :  Timestamp('$HOURLYQUERY', 1) } }'
-  fi
+  # limit the documents included in the output of mongodump
+  # shellcheck disable=SC2016
+  [ "${HOURLYQUERY}" ] && QUERY='{ "ts" : { ${gt} :  Timestamp('${HOURLYQUERY}', 1) } }' || QUERY=""
 fi
 
 # Create required directories
-mkdir -p $BACKUPDIR/{hourly,daily,weekly,monthly} || shellout 'failed to create directories'
+mkdir -p ${BACKUPDIR}/{hourly,daily,weekly,monthly} || shellout "failed to create directories '${BACKUPDIR}/{hourly,daily,weekly,monthly}'"
 
-if [ "$LATEST" = "yes" ]; then
-    rm -rf "$BACKUPDIR/latest"
-    mkdir -p "$BACKUPDIR/latest" || shellout 'failed to create directory'
+if [ "${LATEST}" = "yes" ] ; then
+    rm -rf "${BACKUPDIR}/latest"
+    mkdir -p "${BACKUPDIR}/latest" || shellout "failed to create directory '${BACKUPDIR}/latest'"
 fi
 
 # Do we use a filter for hourly point-in-time snapshotting?
-if [ "$DOHOURLY" == "yes" ]; then
+if [ "${DOHOURLY}" == "yes" ] ; then
 
   # getting PITR START timestamp
   # shellcheck disable=SC2012
-  [ "$COMP" = "gzip" ] && HOURLYQUERY=$(ls -t $BACKUPDIR/hourly | head -n 1 | cut -d '.' -f3)
+  [ "${COMP}" = "gzip" ] && HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
 
   # setting the start timestamp to NOW for the first execution
-  if [ -z "$HOURLYQUERY" ]; then
-      QUERY=""
-    else
-      # limit the documents included in the output of mongodump
-      # shellcheck disable=SC2016
-      QUERY='{ "ts" : { $gt :  Timestamp('$HOURLYQUERY', 1) } }'
-  fi
+  # limit the documents included in the output of mongodump
+  # shellcheck disable=SC2016
+  [ "${HOURLYQUERY}" ] && QUERY='{ "ts" : { ${gt} :  Timestamp('${HOURLYQUERY}', 1) } }' || QUERY=""
 fi
-
-# Check for correct sed usage
-if [ "$(uname -s)" = 'Darwin' ] || [ "$(uname -s)" = 'FreeBSD' ]; then
-    SED="sed -i ''"
-else
-    SED="sed -i"
-fi
-
-# IO redirection for logging.
-touch "$LOGFILE"
-exec 6>&1           # Link file descriptor #6 with stdout.
-                    # Saves stdout.
-exec > "$LOGFILE"     # stdout replaced with file $LOGFILE.
-
-touch "$LOGERR"
-exec 7>&2           # Link file descriptor #7 with stderr.
-                    # Saves stderr.
-exec 2> "$LOGERR"     # stderr replaced with file $LOGERR.
-
-# When a desire is to receive log via e-mail then we close stdout and stderr.
-[ "x$MAILCONTENT" == "xlog" ] && exec 6>&- 7>&-
 
 # Functions
 
 # Database dump function
-dbdump () {
-    if [ -n "$QUERY" ]; then
+dbdump()
+{
+    if [ -n "${QUERY}" ] ; then
         # filter for point-in-time snapshotting and if DOHOURLY=yes
         # shellcheck disable=SC2086
-        mongodump --quiet --host=$DBHOST:$DBPORT --out="$1" $OPT -q "$QUERY"
+        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="${1}" ${OPT} -q "${QUERY}" || shellout "mongodump failed to create '${1}' with error code ${?}"
       else
         # all others backups type
         # shellcheck disable=SC2086
-        mongodump --quiet --host=$DBHOST:$DBPORT --out="$1" $OPT
+        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="${1}" ${OPT} || shellout "mongodump failed to create '${1}' with error code ${?}"
     fi
-    [ -e "$1" ] && return 0
-    echo "ERROR: mongodump failed to create dumpfile: $1" >&2
+    [ -e "${1}" ] && return 0
+    echo "ERROR: mongodump failed to create dumpfile: ${1}" >&2
     return 1
 }
 
@@ -449,22 +385,23 @@ dbdump () {
 # Select first available Secondary member in the Replica Sets and show its
 # host name and port.
 #
-function select_secondary_member {
+select_secondary_member()
+{
     # We will use indirect-reference hack to return variable from this function.
-    local __return=$1
+    local __return=${1}
 
     # Return list of with all replica set members
     # shellcheck disable=SC2086
-    members=( $(mongo --quiet --host $DBHOST:$DBPORT --eval 'rs.conf().members.forEach(function(x){ print(x.host) })' $OPTSEC ) )
+    members=( $(mongo --quiet --host ${DBHOST}:${DBPORT} --eval 'rs.conf().members.forEach(function(x){ print(x.host) })' ${OPTSEC} ) )
 
     # Check each replset member to see if it's a secondary and return it.
-    if [ ${#members[@]} -gt 1 ]; then
+    if [ ${#members[@]} -gt 1 ] ; then
         for member in "${members[@]}"; do
 
-            is_secondary=$(mongo --quiet --host "$member" --eval 'rs.isMaster().secondary' $OPTSEC )
-            case "$is_secondary" in
+            is_secondary=$(mongo --quiet --host "${member}" --eval 'rs.isMaster().secondary' ${OPTSEC} )
+            case "${is_secondary}" in
                 'true')     # First secondary wins ...
-                    secondary=$member
+                    secondary="${member}"
                     break
                 ;;
                 'false')    # Skip particular member if it is a Primary.
@@ -477,83 +414,54 @@ function select_secondary_member {
         done
     fi
 
-    if [ -n "$secondary" ]; then
-        # Ugly hack to return value from a Bash function ...
-        # shellcheck disable=SC2086
-        eval $__return="'$secondary'"
-    fi
+     Ugly hack to return value from a Bash function ...
+    # shellcheck disable=SC2086
+	[ -n "${secondary}" ] && eval ${__return}="'${secondary}'"
 }
 
-if [ -n "$MAXFILESIZE" ]; then
-    write_file() {
-        split --bytes "$MAXFILESIZE" --numeric-suffixes - "${1}-"
-    }
-else
-    write_file() {
-        cat > "$1"
-    }
-fi
+write_file()
+{
+	[ "${MAXFILESIZE}" ] && split --bytes "${MAXFILESIZE}" --numeric-suffixes - "${1}-" || cat > "${1}"
+}
 
 # Compression function plus latest copy
-compression () {
+compression()
+{
     SUFFIX=""
-    dir=$(dirname "$1")
-    file=$(basename "$1")
-    if [ -n "$COMP" ]; then
-        [ "$COMP" = "gzip" ] && SUFFIX=".tgz"
-        [ "$COMP" = "bzip2" ] && SUFFIX=".tar.bz2"
-        echo Tar and $COMP to "$file$SUFFIX"
-        cd "$dir" || return 1
-        tar -cf - "$file" | $COMP --stdout | write_file "${file}${SUFFIX}"
+    dir="${1%/*}"
+    file="${1##*/}"
+    if [ -n "${COMP}" ] ; then
+        [ "${COMP}" = "gzip" ] && SUFFIX=".tgz"
+        [ "${COMP}" = "bzip2" ] && SUFFIX=".tar.bz2"
+        echo Tar and ${COMP} to "${file}${SUFFIX}"
+        cd "${dir}" || return 1
+        tar -cf - "${file}" | ${COMP} --stdout | write_file "${file}${SUFFIX}"
         cd - >/dev/null || return 1
     else
         echo "No compression option set, check advanced settings"
     fi
 
-    if [ "$LATEST" = "yes" ]; then
-        if [ "$LATESTLINK" = "yes" ];then
-            COPY="ln"
-        else
-            COPY="cp"
-        fi
-        $COPY "$1$SUFFIX" "$BACKUPDIR/latest/"
+    if [ "${LATEST}" = "yes" ] ; then
+        [ "${LATESTLINK}" = "yes" ] && COPY="ln" || COPY="cp"
+        ${COPY} "${1}${SUFFIX}" "${BACKUPDIR}/latest/"
     fi
 
-    if [ "$CLEANUP" = "yes" ]; then
-        echo Cleaning up folder at "$1"
-        rm -rf "$1"
+    if [ "${CLEANUP}" = "yes" ] ; then
+        rm -rf "${1}" || echo "Cleaning up folder at '${1}' failed."
     fi
 
     return 0
 }
 
 # Run command before we begin
-if [ "$PREBACKUP" ]; then
-    echo ======================================================================
-    echo "Prebackup command output."
-    echo
-    eval "$PREBACKUP"
-    echo
-    echo ======================================================================
-    echo
-fi
-
-# Hostname for LOG information
-if [ "$DBHOST" = "localhost" ] || [ "$DBHOST" = "127.0.0.1" ]; then
-    HOST=$(hostname)
-    if [ "$SOCKET" ]; then
-        OPT="$OPT --socket=$SOCKET"
-    fi
-else
-    HOST=$DBHOST
-fi
+[ "${PREBACKUP}" ] && eval "${PREBACKUP}"
 
 # Try to select an available secondary for the backup or fallback to DBHOST.
-if [ "x${REPLICAONSLAVE}" == "xyes" ]; then
+if [ "${REPLICAONSLAVE}" == "yes" ] ; then
     # Return value via indirect-reference hack ...
     select_secondary_member secondary
 
-    if [ -n "$secondary" ]; then
+    if [ -n "${secondary}" ] ; then
         DBHOST=${secondary%%:*}
         DBPORT=${secondary##*:}
     else
@@ -561,142 +469,31 @@ if [ "x${REPLICAONSLAVE}" == "xyes" ]; then
     fi
 fi
 
-echo ======================================================================
-echo AutoMongoBackup VER $VER
+[ "${SECONDARY_WARNING}" ] && echo -e "${SECONDARY_WARNING}"
 
-if [ ! -z "$SECONDARY_WARNING" ]; then
-    echo
-    echo "$SECONDARY_WARNING"
-fi
-
-echo
-echo "Backup of Database Server - $HOST on $DBHOST"
-echo ======================================================================
-
-echo "Backup Start $(date)"
-echo ======================================================================
 # Monthly Full Backup of all Databases
-if [[ $DOM = "01" ]] && [[ $DOMONTHLY = "yes" ]]; then
-    echo Monthly Full Backup
-    echo
+if [ "${DOM}" = "01" ] && [ ${DOMONTHLY} = "yes" ] ; then
     # Delete old monthly backups while respecting the set rentention policy.
-    if [[ $MONTHLYRETENTION -ge 0 ]] ; then
-        NUM_OLD_FILES=$(find $BACKUPDIR/monthly -depth -not -newermt "$MONTHLYRETENTION month ago" -type f | wc -l)
-        if [[ $NUM_OLD_FILES -gt 0 ]] ; then
-            echo Deleting "$NUM_OLD_FILES" global setting backup file\(s\) older than "$MONTHLYRETENTION" month\(s\) old.
-            find $BACKUPDIR/monthly -not -newermt "$MONTHLYRETENTION month ago" -type f -delete
-        fi
-    fi
-    FILE="$BACKUPDIR/monthly/$DATE.$M"
-
+    [ "${MONTHLYRETENTION}" -ge "0" ] && find ${BACKUPDIR}/monthly -not -newermt "${MONTHLYRETENTION} month ago" -type f -delete
+    FILE="${BACKUPDIR}/monthly/${DATE}.${M}"
 # Weekly Backup
-elif [[ "$DNOW" = "$WEEKLYDAY" ]] && [[ "$DOWEEKLY" = "yes" ]] ; then
-    echo Weekly Backup
-    echo
-    if [[ $WEEKLYRETENTION -ge 0 ]] ; then
-        # Delete old weekly backups while respecting the set rentention policy.
-        NUM_OLD_FILES=$(find $BACKUPDIR/weekly -depth -not -newermt "$WEEKLYRETENTION week ago" -type f | wc -l)
-        if [[ $NUM_OLD_FILES -gt 0 ]] ; then
-            echo Deleting "$NUM_OLD_FILES" global setting backup file\(s\) older than "$WEEKLYRETENTION" week\(s\) old.
-            find $BACKUPDIR/weekly -not -newermt "$WEEKLYRETENTION week ago" -type f -delete
-        fi
-    fi
-    FILE="$BACKUPDIR/weekly/week.$W.$DATE"
-
+elif [ "${DNOW}" = "${WEEKLYDAY}" ] && [ "${DOWEEKLY}" = "yes" ] ; then
+    [ "${WEEKLYRETENTION}" -ge "0" ] && find "${BACKUPDIR}/weekly" -not -newermt "${WEEKLYRETENTION} week ago" -type f -delete
+    FILE="${BACKUPDIR}/weekly/week.${W}.${DATE}"
 # Daily Backup
-elif [[ $DODAILY = "yes" ]] ; then
-    echo Daily Backup of Databases
-    echo
-    # Delete old daily backups while respecting the set rentention policy.
-    if [[ $DAILYRETENTION -ge 0 ]] ; then
-        NUM_OLD_FILES=$(find $BACKUPDIR/daily -depth -not -newermt "$DAILYRETENTION days ago" -type f | wc -l)
-        if [[ $NUM_OLD_FILES -gt 0 ]] ; then
-            echo Deleting "$NUM_OLD_FILES" global setting backup file\(s\) made in previous weeks.
-            find "$BACKUPDIR/daily" -not -newermt "$DAILYRETENTION days ago" -type f -delete
-        fi
-    fi
-    FILE="$BACKUPDIR/daily/$DATE.$DOW"
-
+elif [ "${DODAILY}" = "yes" ] ; then
+	[ "${DAILYRETENTION}" -ge "0" ] && find "${BACKUPDIR}/daily" -not -newermt "${DAILYRETENTION} days ago" -type f -delete
+    FILE="${BACKUPDIR}/daily/${DATE}.${DOW}"
 # Hourly Backup
-elif [[ $DOHOURLY = "yes" ]] ; then
-    echo Hourly Backup of Databases
-    echo
-    # Delete old hourly backups while respecting the set rentention policy.
-    if [[ $HOURLYRETENTION -ge 0 ]] ; then
-        NUM_OLD_FILES=$(find $BACKUPDIR/hourly -depth -not -newermt "$HOURLYRETENTION hour ago" -type f | wc -l)
-        if [[ $NUM_OLD_FILES -gt 0 ]] ; then
-            echo "Deleting $NUM_OLD_FILES global setting backup file\(s\) made in previous weeks."
-            find $BACKUPDIR/hourly -not -newermt "$HOURLYRETENTION hour ago" -type f -delete
-        fi
-    fi
-    FILE="$BACKUPDIR/hourly/$DATE.$DOW.$HOD"
-    # convert timestamp to date: echo $TIMESTAMP | gawk '{print strftime("%c", $0)}'
-
+elif [ "${DOHOURLY}" = "yes" ] ; then
+	[ "${HOURLYRETENTION}" -ge "0" ] && find ${BACKUPDIR}/hourly -not -newermt "${HOURLYRETENTION} hour ago" -type f -delete
+    FILE="${BACKUPDIR}/hourly/${DATE}.${DOW}.${HOD}"
 fi
 
 # FILE will not be set if no frequency is selected.
-if [[ -z "$FILE" ]] ; then
-  echo "ERROR: No backup frequency was chosen."
-  echo "Please set one of DOHOURLY,DODAILY,DOWEEKLY,DOMONTHLY to \"yes\"" 
-  exit 1
-fi
+[ "${FILE}" ] || { echo -e "ERROR: No backup frequency was chosen.\nPlease set one of DOHOURLY,DODAILY,DOWEEKLY,DOMONTHLY to 'yes'" ; exit 1 ; }
 
-dbdump "$FILE" && compression "$FILE"
-
-echo ----------------------------------------------------------------------
-echo "Backup End Time $(date)"
-echo ======================================================================
-
-echo Total disk space used for backup storage..
-echo Size - Location
-du -hs "$BACKUPDIR"
-echo
-echo ======================================================================
+dbdump "${FILE}" && compression "${FILE}"
 
 # Run command when we're done
-if [ "$POSTBACKUP" ]; then
-    echo ======================================================================
-    echo "Postbackup command output."
-    echo
-    eval "$POSTBACKUP"
-    echo
-    echo ======================================================================
-fi
-
-# Clean up IO redirection if we plan not to deliver log via e-mail.
-[ ! "x$MAILCONTENT" == "xlog" ] && exec 1>&6 2>&7 6>&- 7>&-
-
-if [ -s "$LOGERR" ]; then
-    eval "$SED" "/^connected/d" "$LOGERR"
-fi
-
-if [ "$MAILCONTENT" = "log" ]; then
-    mail -s "Mongo Backup Log for $HOST - $DATE" "$MAILADDR" < "$LOGFILE"
-
-    if [ -s "$LOGERR" ]; then
-        cat "$LOGERR"
-        mail -s "ERRORS REPORTED: Mongo Backup error Log for $HOST - $DATE" "$MAILADDR" < "$LOGERR"
-    fi
-else
-    if [ -s "$LOGERR" ]; then
-        cat "$LOGFILE"
-        echo
-        echo "###### WARNING ######"
-        echo "STDERR written to during mongodump execution."
-        echo "The backup probably succeeded, as mongodump sometimes writes to STDERR, but you may wish to scan the error log below:"
-        cat "$LOGERR"
-    else
-        cat "$LOGFILE"
-    fi
-fi
-
-# TODO: Would be nice to know if there were any *actual* errors in the $LOGERR
-STATUS=0
-if [ -s "$LOGERR" ]; then
-    STATUS=1
-fi
-
-# Clean up Logfile
-rm -f "$LOGFILE" "$LOGERR"
-
-exit $STATUS
+[ "${POSTBACKUP}" ] && eval "${POSTBACKUP}"
