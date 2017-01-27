@@ -89,9 +89,6 @@ MONTHLYRETENTION=4
 # === ADVANCED OPTIONS ( Read the doc's below for details )===
 #=============================================================
 
-# Choose Compression type. (gzip or bzip2)
-COMP="gzip"
-
 # Choose if the uncompressed folder should be deleted after compression has completed
 CLEANUP="yes"
 
@@ -370,14 +367,14 @@ dbdump()
     if [ -n "${QUERY}" ] ; then
         # filter for point-in-time snapshotting and if DOHOURLY=yes
         # shellcheck disable=SC2086
-        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="${1}" ${OPT} -q "${QUERY}" || shellout "mongodump failed to create '${1}' with error code ${?}"
+        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="/tmp/${1##*/}" ${OPT} -q "${QUERY}" || shellout "mongodump failed to create '${1}' with error code ${?}"
       else
         # all others backups type
         # shellcheck disable=SC2086
-        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="${1}" ${OPT} || shellout "mongodump failed to create '${1}' with error code ${?}"
+        mongodump --quiet --host="${DBHOST}:${DBPORT}" --out="/tmp/${1##*/}" ${OPT} || shellout "mongodump failed to create '${1}' with error code ${?}"
     fi
-    [ -e "${1}" ] && return 0
-    echo "ERROR: mongodump failed to create dumpfile: ${1}" >&2
+    [ -e "/tmp/${1##*/}" ] && return 0
+    echo "ERROR: mongodump failed to create dumpfile: '/tmp/${1##*/}'" >&2
     return 1
 }
 
@@ -416,12 +413,7 @@ select_secondary_member()
 
      Ugly hack to return value from a Bash function ...
     # shellcheck disable=SC2086
-	[ -n "${secondary}" ] && eval ${__return}="'${secondary}'"
-}
-
-write_file()
-{
-	[ "${MAXFILESIZE}" ] && split --bytes "${MAXFILESIZE}" --numeric-suffixes - "${1}-" || cat > "${1}"
+        [ -n "${secondary}" ] && eval ${__return}="'${secondary}'"
 }
 
 # Compression function plus latest copy
@@ -430,25 +422,14 @@ compression()
     SUFFIX=""
     dir="${1%/*}"
     file="${1##*/}"
-    if [ -n "${COMP}" ] ; then
-        [ "${COMP}" = "gzip" ] && SUFFIX=".tgz"
-        [ "${COMP}" = "bzip2" ] && SUFFIX=".tar.bz2"
-        echo Tar and ${COMP} to "${file}${SUFFIX}"
-        cd "${dir}" || return 1
-        tar -cf - "${file}" | ${COMP} --stdout | write_file "${file}${SUFFIX}"
-        cd - >/dev/null || return 1
-    else
-        echo "No compression option set, check advanced settings"
-    fi
+    tar -czf "${1}.tgz" "/tmp/${file}"
 
     if [ "${LATEST}" = "yes" ] ; then
         [ "${LATESTLINK}" = "yes" ] && COPY="ln" || COPY="cp"
-        ${COPY} "${1}${SUFFIX}" "${BACKUPDIR}/latest/"
+        ${COPY} "${1}.tgz" "${BACKUPDIR}/latest/"
     fi
 
-    if [ "${CLEANUP}" = "yes" ] ; then
-        rm -rf "${1}" || echo "Cleaning up folder at '${1}' failed."
-    fi
+    [ "${CLEANUP}" = "yes" ] && rm -rf "/tmp/${file}" || echo "Cleaning up folder at '/tmp/${file}' failed."
 
     return 0
 }
@@ -482,18 +463,21 @@ elif [ "${DNOW}" = "${WEEKLYDAY}" ] && [ "${DOWEEKLY}" = "yes" ] ; then
     FILE="${BACKUPDIR}/weekly/week.${W}.${DATE}"
 # Daily Backup
 elif [ "${DODAILY}" = "yes" ] ; then
-	[ "${DAILYRETENTION}" -ge "0" ] && find "${BACKUPDIR}/daily" -not -newermt "${DAILYRETENTION} days ago" -type f -delete
+        [ "${DAILYRETENTION}" -ge "0" ] && find "${BACKUPDIR}/daily" -not -newermt "${DAILYRETENTION} days ago" -type f -delete
     FILE="${BACKUPDIR}/daily/${DATE}.${DOW}"
 # Hourly Backup
 elif [ "${DOHOURLY}" = "yes" ] ; then
-	[ "${HOURLYRETENTION}" -ge "0" ] && find ${BACKUPDIR}/hourly -not -newermt "${HOURLYRETENTION} hour ago" -type f -delete
+        [ "${HOURLYRETENTION}" -ge "0" ] && find ${BACKUPDIR}/hourly -not -newermt "${HOURLYRETENTION} hour ago" -type f -delete
     FILE="${BACKUPDIR}/hourly/${DATE}.${DOW}.${HOD}"
 fi
 
 # FILE will not be set if no frequency is selected.
 [ "${FILE}" ] || { echo -e "ERROR: No backup frequency was chosen.\nPlease set one of DOHOURLY,DODAILY,DOWEEKLY,DOMONTHLY to 'yes'" ; exit 1 ; }
 
-dbdump "${FILE}" && compression "${FILE}"
+dbdump "${FILE}" || exit 1
+compression "${FILE}" || exit 1
 
 # Run command when we're done
 [ "${POSTBACKUP}" ] && eval "${POSTBACKUP}"
+
+exit 0
