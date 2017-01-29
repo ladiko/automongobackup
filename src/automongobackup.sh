@@ -330,7 +330,7 @@ if [ "${DOHOURLY}" == "yes" ] ; then
 
   # getting PITR START timestamp
   # shellcheck disable=SC2012
-  [ "${COMP}" = "gzip" ] && HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
+  HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
 
   # setting the start timestamp to NOW for the first execution
   # limit the documents included in the output of mongodump
@@ -351,7 +351,7 @@ if [ "${DOHOURLY}" == "yes" ] ; then
 
   # getting PITR START timestamp
   # shellcheck disable=SC2012
-  [ "${COMP}" = "gzip" ] && HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
+  HOURLYQUERY=$(ls -t ${BACKUPDIR}/hourly | head -n 1 | cut -d '.' -f3)
 
   # setting the start timestamp to NOW for the first execution
   # limit the documents included in the output of mongodump
@@ -422,7 +422,7 @@ compression()
     SUFFIX=""
     dir="${1%/*}"
     file="${1##*/}"
-    tar -czf "${1}.tgz" "/tmp/${file}"
+    tar -czf -C /tmp "${1}.tgz" "${file}"
 
     if [ "${LATEST}" = "yes" ] ; then
         [ "${LATESTLINK}" = "yes" ] && COPY="ln" || COPY="cp"
