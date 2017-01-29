@@ -74,7 +74,7 @@ HOURLYRETENTION=24
 
 # Do you want to do daily backups? How long do you want to keep them?
 DODAILY="yes"
-DAILYRETENTION=0
+DAILYRETENTION=7
 
 # Which day do you want weekly backups? (1 to 7 where 1 is Monday)
 DOWEEKLY="yes"
@@ -419,10 +419,8 @@ select_secondary_member()
 # Compression function plus latest copy
 compression()
 {
-    SUFFIX=""
-    dir="${1%/*}"
     file="${1##*/}"
-    tar -czf -C /tmp "${1}.tgz" "${file}"
+    tar -C /tmp -czf "${1}.tgz" "${file}"
 
     if [ "${LATEST}" = "yes" ] ; then
         [ "${LATESTLINK}" = "yes" ] && COPY="ln" || COPY="cp"
